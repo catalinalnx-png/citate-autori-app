@@ -1,0 +1,15 @@
+
+node_modules
+/package-look.json
+
+.DS_Store
+Thumbs.db
+
+.env
+.env.local
+
+dist/
+build/
+
+*.log
+npm-debug*.log
