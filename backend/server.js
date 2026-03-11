@@ -1,81 +1,108 @@
-const express =require("express");
-const cors =require("cors");
-const fs = require("fs");
+const express = require("express");
+const cors = require("cors");
 const path = require("path");
+const Joi = require("joi");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Deserveste imaginile static
+const JSON_SERVER_URL = "http://localhost:3000/quotes";
+
+// 1. Definitie Middleware Validare ID
+const validateId = (req, res, next) => {
+    if (isNaN(req.params.id)) {
+        return res.status(400).json({ error: "Invalid ID format" });
+    }
+    next();
+};
+
+// 2. Schema Joi
+const quoteSchema = Joi.object({
+    author: Joi.string().min(2).required(),
+    quote: Joi.string().min(5).required(),
+});
+
+// Deserveste imagini static
 app.use("/images", express.static(path.join(__dirname, "images")));
 
-// Ruta de test
+// Rute
 app.get("/", (req, res) => {
-  res.json({
-    message: "Printing Quotes API is running...",
-    endpoints: {
-      quotes: "/api/quotes",
-      health: "/api/health"
+    res.send("Printing Quotes API is running...");
+});
+
+// GET all quotes
+app.get("/api/quotes", async (req, res) => {
+    try {
+        const response = await fetch(JSON_SERVER_URL);
+        const data = await response.json();
+        res.json(data);
+    } catch (error) {
+        res.status(500).json({ error: "Failed to fetch quotes" });
     }
-  });
 });
 
-let quotes = [
-  { id: 1, author: "Socrates", quote: "The only true wisdom is in knowing you know nothing." },
-  { id: 2, author: "Albert Einstein", quote: "Life is like riding a bicycle. To keep your balance you must keep moving." }
-];
+// POST new quote
+app.post("/api/quotes", async (req, res) => {
+    const { error } = quoteSchema.validate(req.body);
+    if (error) return res.status(400).json({ error: error.details[0].message });
 
-app.get('/api/quotes', (req, res) => {
-  res.status(200).json(quotes);
+    try {
+        const response = await fetch(JSON_SERVER_URL);
+        const quotes = await response.json();
+        const newId = quotes.length > 0 ? Math.max(...quotes.map(q => Number(q.id))) + 1 : 1;
+
+        const newQuote = { id: newId.toString(), ...req.body };
+        const postResponse = await fetch(JSON_SERVER_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(newQuote),
+        });
+        const data = await postResponse.json();
+        res.status(201).json(data);
+    } catch (error) {
+        res.status(500).json({ error: "Failed to add quote" });
+    }
 });
 
-app.post('/api/quotes', (req, res) => {
-  const { author, quote } = req.body;
-  const newQuote = {
-    id: quotes.length + 1, // Generăm un ID unic
-    author,
-    quote
-  };
+// PUT update quote
+app.put("/api/quotes/:id", validateId, async (req, res) => {
+    const { error } = quoteSchema.validate(req.body);
+    if (error) return res.status(400).json({ error: error.details[0].message });
 
-  quotes.push(newQuote);
-  res.status(201).json(newQuote);
+    try {
+        const quoteId = req.params.id;
+        const updatedQuote = { id: quoteId, ...req.body };
+        const response = await fetch(`${JSON_SERVER_URL}/${quoteId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(updatedQuote),
+        });
+
+        if (!response.ok) return res.status(404).json({ error: "Quote not found" });
+
+        const data = await response.json();
+        res.json(data);
+    } catch (error) {
+        res.status(500).json({ error: "Failed to update quote" });
+    }
 });
 
-// PUT /api/quotes/:id - Actualizează citatul cu ID-ul specificat în URL
-app.put('/api/quotes/:id', (req, res) => {
-  const id = parseInt(req.params.id);
-  const { author, quote } = req.body;
+// DELETE quote
+app.delete("/api/quotes/:id", validateId, async (req, res) => {
+    try {
+        const quoteId = req.params.id;
+        const check = await fetch(`${JSON_SERVER_URL}/${quoteId}`);
+        if (!check.ok) return res.status(404).json({ error: "Quote not found" });
 
-  const index = quotes.findIndex(q => q.id === id);
-
-  if (index === -1) {
-    // Dacă nu-l găsește, trimite eroare 404
-    return res.status(404).json({ message: "Citatul nu a fost găsit!" });
-  }
-
-  // Actualizăm elementul direct din memorie
-  quotes[index] = { id, author, quote };
-  res.status(200).json(quotes[index]);
+        await fetch(`${JSON_SERVER_URL}/${quoteId}`, { method: "DELETE" });
+        res.json({ message: "Quote deleted successfully" });
+    } catch (error) {
+        res.status(500).json({ error: "Failed to delete quote" });
+    }
 });
 
-// DELETE /api/quotes/:id - Șterge citatul cu ID-ul specificat din array
-app.delete('/api/quotes/:id', (req, res) => {
-  const id = parseInt(req.params.id);
-  const index = quotes.findIndex(q => q.id === id);
-
-  if (index === -1) {
-    return res.status(404).json({ message: "Citatul nu a fost găsit!" });
-  }
-
-  quotes.splice(index, 1);
-  res.status(200).json({ message: "Citatul a fost șters cu succes!" });
-});
-
-// Pornim serverul pe portul 5000
-const PORT = process.env.port || 5000;
+const PORT = 5000;
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-  console.log(`Serving static images from: ${path.join(__dirname, "images")}`);
+    console.log(`Server running on http://localhost:${PORT}`);
 });
-
