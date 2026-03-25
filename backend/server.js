@@ -32,14 +32,34 @@ app.get("/", (req, res) => {
 });
 
 // GET all quotes
+// GET /api/quotes?search=termen
+// Dacă parametrul 'search' există în query string, filtrăm rezultatele.
+// Căutarea este case-insensitive și caută atât în author cât și în quote.
 app.get("/api/quotes", async (req, res) => {
-    try {
-        const response = await fetch(JSON_SERVER_URL);
-        const data = await response.json();
-        res.json(data);
-    } catch (error) {
-        res.status(500).json({ error: "Failed to fetch quotes" });
+  try {
+    const response = await fetch(JSON_SERVER_URL);
+    const data = await response.json();
+
+    const { search } = req.query; // req.query conține parametrii din URL
+    if (search && search.trim()) {
+      const term = search.trim().toLowerCase();
+
+      // Filtrăm array-ul - includem citatul dacă termenul apare
+      // în numele autorului SAU în textul citatului
+      const filtered = data.filter(q =>
+        q.author.toLowerCase().includes(term) ||
+        q.quote.toLowerCase().includes(term)
+      );
+
+      return res.status(200).json(filtered);
     }
+
+    // Fără parametru search -> returnăm toate citatele
+    res.status(200).json(data);
+  } catch (error) {
+    console.error("Eroare la preluarea citatelor:", error.message);
+    res.status(500).json({ error: "Nu s-au putut prelua citatele." });
+  }
 });
 
 // POST new quote
@@ -101,6 +121,7 @@ app.delete("/api/quotes/:id", validateId, async (req, res) => {
         res.status(500).json({ error: "Failed to delete quote" });
     }
 });
+
 
 const PORT = 5000;
 app.listen(PORT, () => {
